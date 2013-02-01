@@ -21,6 +21,8 @@ import clojure.asm.commons.Method;
 import java.io.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -4432,6 +4434,36 @@ static public class ObjExpr implements Expr{
 				gen.push(((Character) value).charValue());
 				gen.invokeStatic(Type.getType(Character.class), Method.getMethod("Character valueOf(char)"));
 				}
+		else if(value instanceof BigInteger)
+            {
+		    gen.newInstance(Type.getType(BigInteger.class));
+            gen.dup();
+            gen.push(((BigInteger)value).toString());
+            gen.invokeConstructor(Type.getType(BigInteger.class),
+                                  Method.getMethod("void <init>(String)"));         
+            }
+        else if(value instanceof BigDecimal)
+            {
+            gen.newInstance(Type.getType(BigDecimal.class));
+            gen.dup();
+            gen.push(((BigDecimal)value).toString());
+            gen.invokeConstructor(Type.getType(BigDecimal.class),
+                                  Method.getMethod("void <init>(String)"));         
+            }
+		else if(value instanceof BigInt)
+    		{
+    		emitValue(((BigInt)value).toBigInteger(), gen);
+    		gen.invokeStatic(Type.getType(BigInt.class), Method.getMethod("clojure.lang.BigInt fromBigInteger(java.math.BigInteger)"));    		
+    		}
+        else if(value instanceof Ratio)
+            {
+            gen.newInstance(Type.getType(Ratio.class));
+            gen.dup();
+            emitValue(((Ratio)value).numerator, gen);
+            emitValue(((Ratio)value).denominator, gen);
+            gen.invokeConstructor(Type.getType(Ratio.class),
+                                  Method.getMethod("void <init>(java.math.BigInteger, java.math.BigInteger)"));
+            }
 		else if(value instanceof Class)
 			{
 			Class cc = (Class)value;
@@ -4558,6 +4590,23 @@ static public class ObjExpr implements Expr{
 			gen.invokeStatic(Type.getType(Pattern.class),
 							 Method.getMethod("java.util.regex.Pattern compile(String)"));
 			}
+		else if(value instanceof Namespace)
+    		{
+		    gen.push(((Namespace)value).name.ns);
+            gen.push(((Namespace)value).name.name);
+            gen.invokeStatic(Type.getType(Symbol.class),
+                             Method.getMethod("clojure.lang.Symbol intern(String,String)"));
+    		gen.invokeStatic(Type.getType(Namespace.class),
+    		                 Method.getMethod("clojure.lang.Namespace find(clojure.lang.Symbol)"));
+    		}
+		else if(value instanceof clojure.lang.Fn)
+    		{
+		    // e.g. (eval (list + 1 2 3))
+		    gen.newInstance(Type.getType(value.getClass()));
+		    gen.dup();
+		    gen.invokeConstructor(Type.getType(value.getClass()),
+		                    new Method("<init>", Type.getConstructorDescriptor(value.getClass().getConstructors()[0])));
+    		}
 		else
 			{
 			String cs = null;
@@ -4569,7 +4618,7 @@ static public class ObjExpr implements Expr{
 			catch(Exception e)
 				{
 				throw Util.runtimeException(
-						"Can't embed object in code, maybe print-dup not defined: " +
+						"Can't embed object in code, maybe print-method not defined: " +
 						value);
 				}
 			if(cs.length() == 0)
@@ -4601,20 +4650,11 @@ static public class ObjExpr implements Expr{
 
 
 	void emitConstants(GeneratorAdapter clinitgen){
-		try
+		for(int i = 0; i < constants.count(); i++)
 			{
-			Var.pushThreadBindings(RT.map(RT.PRINT_DUP, RT.T));
-
-			for(int i = 0; i < constants.count(); i++)
-				{
-				emitValue(constants.nth(i), clinitgen);
-				clinitgen.checkCast(constantType(i));
-				clinitgen.putStatic(objtype, constantName(i), constantType(i));
-				}
-			}
-		finally
-			{
-			Var.popThreadBindings();
+			emitValue(constants.nth(i), clinitgen);
+			clinitgen.checkCast(constantType(i));
+			clinitgen.putStatic(objtype, constantName(i), constantType(i));
 			}
 	}
 
@@ -7240,20 +7280,11 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 			                                                  null,
 			                                                  cv);
 			clinitgen.visitCode();
-			try
+			for(int i = n*INITS_PER; i < objx.constants.count() && i < (n+1)*INITS_PER; i++)
 				{
-				Var.pushThreadBindings(RT.map(RT.PRINT_DUP, RT.T));
-
-				for(int i = n*INITS_PER; i < objx.constants.count() && i < (n+1)*INITS_PER; i++)
-					{
-					objx.emitValue(objx.constants.nth(i), clinitgen);
-					clinitgen.checkCast(objx.constantType(i));
-					clinitgen.putStatic(objx.objtype, objx.constantName(i), objx.constantType(i));
-					}
-				}
-			finally
-				{
-				Var.popThreadBindings();
+				objx.emitValue(objx.constants.nth(i), clinitgen);
+				clinitgen.checkCast(objx.constantType(i));
+				clinitgen.putStatic(objx.objtype, objx.constantName(i), objx.constantType(i));
 				}
 			clinitgen.returnValue();
 			clinitgen.endMethod();

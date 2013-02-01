@@ -40,7 +40,9 @@
   (is (= (eval '(list + 1 2 3)) (list clojure.core/+ 1 2 3)))
   (test-that "Non-closure fns are supported as code"
              (is (= (eval (eval '(list + 1 2 3))) 6)))
-  (is (= (eval (list '+ 1 2 3)) 6)))
+  (is (= (eval (list '+ 1 2 3)) 6))
+  (test-that "boxed numerics are supported as code"
+    (is (= 4.5M (eval (list + 1N 2.0M 3/2))))))
 
 ; not using Clojure's RT/classForName since a bug in it could hide a bug in
 ; eval's resolution
